@@ -45,6 +45,43 @@ type Repository struct {
 	FullName *string `json:"full_name,omitempty" validate:"required"`
 	Links    Links   `json:"links,omitempty" validate:"required"`
 }
+
+type User struct {
+  Type *string `json:"type,omitempty" validate:"required"`
+  CreateOn *string `json:"created_on" validate:"required"`
+  DisplayName *string `json:"display_name" validate:"required"`
+  Username *string `json:"username" validate:"required"`
+  UUID *string `json:"uuid" validate:"required"`
+}
+
+type UserInComment struct {
+  // {'account_id': '5e1c8b700f45160ca25c3b3d',
+  //          'display_name': 'KONUX bitbucketbot',
+  //          'links': {'avatar': {'href': 'https://secure.gravatar.com/avatar/d5c4bac76953df92f47d1dea43fcdba0?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FKB-4.png'},
+  //                    'html': {'href': 'https://bitbucket.org/%7B6fc2737e-f10f-448a-9ee3-1eaca1edab00%7D/'},
+  //                    'self': {'href': 'https://api.bitbucket.org/2.0/users/%7B6fc2737e-f10f-448a-9ee3-1eaca1edab00%7D'}},
+  //          'nickname': 'KONUX bitbucketbot',
+  //          'type': 'user',
+  //          'uuid': '{6fc2737e-f10f-448a-9ee3-1eaca1edab00}'}}]
+  Type *string `json:"type,omitempty" validate:"required"`
+  Nickname *string `json:"nickname" validate:"required"`
+  DisplayName *string `json:"display_name" validate:"required"`
+  UUID *string `json:"uuid" validate:"required"`
+}
+
+type PullRequestComment struct {
+  // ['id', 'created_on', 'updated_on', 'content', 'user', 'deleted', 'pending', 'type', 'links', 'pullrequest']
+	ID           *int          `json:"id,omitempty" validate:"required"`
+  User *UserInComment `json:"user" validate:"required"`
+  Content   *struct {
+    Raw string `json:"raw"`
+  } `json:"content" validate:"required"`
+}
+
+type PullRequestComments struct {
+  Values []PullRequestComment `json:"values,omitempty"`
+}
+
 type PullRequest struct {
 	ID           *int          `json:"id,omitempty" validate:"required"`
 	Source       *BranchMeta   `json:"source,omitempty" validate:"required"`

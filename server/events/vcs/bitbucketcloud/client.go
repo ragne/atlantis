@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"unicode/utf8"
 
+	"github.com/davecgh/go-spew/spew"
 	validator "github.com/go-playground/validator/v10"
 	"github.com/pkg/errors"
 	"github.com/runatlantis/atlantis/server/events/models"
+	"github.com/runatlantis/atlantis/server/logging"
 )
 
 type Client struct {
@@ -19,13 +22,14 @@ type Client struct {
 	Password    string
 	BaseURL     string
 	AtlantisURL string
+	logger      logging.SimpleLogging
 }
 
 // NewClient builds a bitbucket cloud client. atlantisURL is the
 // URL for Atlantis that will be linked to from the build status icons. This
 // linking is annoying because we don't have anywhere good to link but a URL is
 // required.
-func NewClient(httpClient *http.Client, username string, password string, atlantisURL string) *Client {
+func NewClient(httpClient *http.Client, username string, password string, atlantisURL string, logger logging.SimpleLogging) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -35,6 +39,7 @@ func NewClient(httpClient *http.Client, username string, password string, atlant
 		Password:    password,
 		BaseURL:     BaseURL,
 		AtlantisURL: atlantisURL,
+    logger: logger,
 	}
 }
 
@@ -106,8 +111,84 @@ func (b *Client) ReactToComment(_ models.Repo, _ int, _ int64, _ string) error {
 	return nil
 }
 
-func (b *Client) HidePrevCommandComments(_ models.Repo, _ int, _ string, _ string) error {
+func (b *Client) HidePrevCommandComments(repo models.Repo, pullNum int, command string, _ string) error {
+	// there is no way to hide comment, so delete them instead
+	me, err := b.GetMyUUID()
+	if err != nil {
+		return errors.Wrapf(err, "Cannot get my uuid!")
+	}
+  b.logger.Info("My UUID: %s", me)
+
+	comments, err := b.GetPullRequestComments(repo, pullNum)
+	if err != nil {
+		return err
+	}
+
+	for _, c := range comments {
+    b.logger.Info("Comment is %v", c.Content.Raw)
+		if strings.EqualFold(*c.User.UUID, me) {
+			// do the same crude filtering as github client does
+			body := strings.Split(c.Content.Raw, "\n")
+      b.logger.Info("Body is %s", body)
+			if len(body) == 0 {
+				continue
+			}
+			firstLine := strings.ToLower(body[0])
+      b.logger.Info("First line: %v  Equals?: %s", firstLine, strings.Contains(firstLine, command))
+			if strings.Contains(firstLine, strings.ToLower(command)) {
+				// we found our old comment that references that command
+				// b.DeletePullRequestComment(repo, pullNum, *c.ID)
+			}
+		}
+	}
 	return nil
+}
+
+func (b *Client) DeletePullRequestComment(repo models.Repo, pullNum int, commentId int) error {
+
+	path := fmt.Sprintf("%s/2.0/repositories/%s/pullrequests/%d/comments/%d", b.BaseURL, repo.FullName, pullNum, commentId)
+	_, err := b.makeRequest("DELETE", path, nil)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (b *Client) GetPullRequestComments(repo models.Repo, pullNum int) (comments []PullRequestComment, err error) {
+	path := fmt.Sprintf("%s/2.0/repositories/%s/pullrequests/%d/comments", b.BaseURL, repo.FullName, pullNum)
+	res, err := b.makeRequest("GET", path, nil)
+	if err != nil {
+		return comments, err
+	}
+
+	var pulls PullRequestComments
+  spew.Println(spew.Sdump(string(res)))
+	if err := json.Unmarshal(res, &pulls); err != nil {
+		return comments, errors.Wrapf(err, "Could not parse response %q", string(res))
+	}
+	return pulls.Values, nil
+}
+
+func (b *Client) GetMyUUID() (uuid string, err error) {
+	path := fmt.Sprintf("%s/2.0/user", b.BaseURL)
+	resp, err := b.makeRequest("GET", path, nil)
+
+	if err != nil {
+		return uuid, err
+	}
+
+	var user User
+	if err := json.Unmarshal(resp, &user); err != nil {
+		return uuid, errors.Wrapf(err, "Could not parse response %q", string(resp))
+	}
+
+	if err := validator.New().Struct(user); err != nil {
+		return uuid, errors.Wrapf(err, "API response %q was missing a field", string(resp))
+	}
+
+	uuid = *user.UUID
+	return uuid, nil
+
 }
 
 // PullIsApproved returns true if the merge request was approved.
